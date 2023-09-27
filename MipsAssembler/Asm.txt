@@ -1,45 +1,24 @@
- 
-# ------------------------------------------------------------------
-	.text
-	.globl	main
+addi $a0, $0, 1
+j next
+next:
+j skip1
+add $a0, $a0, $a0
+skip1:
+j skip2:
+add $a0, $a0, $a0
+add $a0, $a0, $a0
+skip2:
+j skip3
+loop:
+add $a0, $a0, $a0
+add $a0, $a0, $a0
+add $a0, $a0, $a0
+skip3:
+j loop
 
- test: addi $a0, $0, 5 # $a0 = 5 (a = 5)
-    addi $a1, $0, 3 # $a1 = 3 (b = 3)
-    jal f # call f(5, 3)
- loop: j loop # and loop forever
-
- f: addi $sp, $sp, −16 # make room on the stack
-    # for $s0, $a0, $a1, and $ra
-    sw $a1, 12($sp) # save $a1 (b)
-    sw $a0, 8($sp) # save $a0 (a)
-    sw $ra, 4($sp) # save $ra
-    sw $s0, 0($sp) # save $s0
-    add $s0, $a0, $0 # $s0 = $a0 (j = a)
-    add $a0, $a1, $0 # place b as argument for f2
-    jal f2 # call f2(b)
-    lw $a0, 8($sp) # restore $a0 (a) after call
-    lw $a1, 12($sp) # restore $a1 (b) after call
-    add $v0, $v0, $s0 # $v0 = f2(b) + j
-    add $v0, $v0, $a0 # $v0 = (f2(b) + j) + a
-    lw $s0, 0($sp) # restore $s0
-    lw $ra, 4($sp) # restore $ra
-    addi $sp, $sp, 16 # restore $sp (stack pointer)
-    jr $ra # return to point of call
-f2:  addi $sp, $sp, −12 # make room on the stack for
-    # $s0, $a0, and $ra
-    sw $a0, 8($sp) # save $a0 (x)
-    sw $ra, 4($sp) # save return address
-    sw $s0, 0($sp) # save $s0
-    addi $s0, $0, 3 # k = 3
-    bne $a0, $0, else # x = 0?
-    addi $v0, $0, 0 # yes: return value should be 0
-    j done # and clean up
-else: 
-    addi $a0, $a0, −1 # no: $a0 = $a0 − 1 (x = x − 1)
-    jal f2 # call f2(x − 1)
-    lw $a0, 8($sp) # restore $a0 (x)
-    add $v0, $v0, $s0 # $v0 = f2(x − 1) + k
-    done: lw $s0, 0($sp) # restore $s0
-    lw $ra, 4($sp) # restore $ra
-    addi $sp, $sp, 12 # restore $sp
-    jr $ra # return to point of call
+	# Start .data segment (data!)
+	.data
+x:	.word 5 , 6, 7,8
+y:	.word 0
+msg1:	.asciiz	"y="
+lf:     .asciiz	"\n"

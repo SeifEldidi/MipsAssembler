@@ -7,13 +7,15 @@
 #include "Parse.h"
 
 static char * parseFirstToken(char *Line ,uint16_t Len ,uint16_t *Token_Len,char **Start);
-static void  InsertSymbolTable(int32_t Address ,char *Token);
+static void  InsertSymbolTable(int32_t Address,uint8_t Section ,char *Token ,char * Val,int AsciLen,int32_t*Word,int WordLEn);
 static bool isTokenLabel(char *Token ,uint16_t Token_len);
 static bool FindSymbolTabel(char *Token , uint32_t *Address);
+static void AddSymbolTabel();
 static bool StrCmp(char *Str1,char *Str2);
 static int16_t ConvertStringToInt(char *Token);
 static bool LoadStoreInstr(char  *Token , char **Register ,uint16_t *Immediate);
 static char * BinaryToHexString(int32_t Instr,int32_t Addr , int len,char *In,char *OP1 ,char *Op2 ,char *Op3);
+static int    StringToint(char *Str);
 
 extern const INSTR INSTR_ARRAY[NO_INSTRUCTIONS][4];
 extern const uint8_t RegVal[];
@@ -24,7 +26,7 @@ bool Parse_ASSM(char * File_Name, char *File_Output)
 	bool Ret = TRUE;
 	FILE *FILE_Buffer = NULL;
 	FILE *FILE_Output  = NULL;
-	uint8_t Flag = 0;
+	uint8_t Flag_Data = 0;
 	int Address = TEXT_SECTION_START_ADDRESS;
 
 	FILE_Output = fopen(File_Output , "w");
@@ -40,6 +42,7 @@ bool Parse_ASSM(char * File_Name, char *File_Output)
 		int16_t Len = 0;
 		uint16_t TokLen = 0;
 		char *Ptr = NULL;
+		uint8_t Flag = TEXT_SECTION;
 		//open Assembly File to Read
 		FILE_Buffer = fopen(File_Name , "r");
 		uint8_t ParseNumber = 0; //First Pass
@@ -86,7 +89,7 @@ bool Parse_ASSM(char * File_Name, char *File_Output)
 							if(Flag == TEXT_SECTION)
 							{
 								*(OldToken + TokLen -1) = '\0';
-								InsertSymbolTable(Address,OldToken);
+								InsertSymbolTable(Address,TEXT_SECTION,OldToken,NULL,0,NULL,0);
 								Token = parseFirstToken(Ptr ,Len,&TokLen,&Ptr);
 								if (IS_INSTR_Available(Token))
 									Address += 4;
@@ -95,6 +98,10 @@ bool Parse_ASSM(char * File_Name, char *File_Output)
 							{
 								uint16_t Prev = 0;
 								char Tok_Char = '\0';
+								char * AsciArr = NULL;
+								int * WordArrayA = NULL;
+								int AsciLen = 0;
+								int WordLen = 0;
 								*(OldToken + TokLen -1) = '\0';
 								do
 								{
@@ -102,8 +109,25 @@ bool Parse_ASSM(char * File_Name, char *File_Output)
 									Tok_Char = *Token;
 									if(strlen(Token) == strlen(".word")&& strcmp(Token, ".word") == 0)
 									{
-										free(Token);
-										Prev += 4;
+										if(WordArrayA != NULL)
+											free(WordArrayA);
+										Tok_Char = *Token;
+										int len = 0;
+										int WordArray[256] ={0};
+										do
+										{
+											Token = parseFirstToken(Ptr ,Len,&TokLen,&Ptr);
+											Tok_Char = *Token;
+											//Convert String to Int
+											if(Tok_Char != '\n' && Tok_Char !='\0')
+											{
+												Prev += 4;
+												WordArray[len++] = StringToint(Token);
+											}
+										}while(Tok_Char != '\n' && Tok_Char !='\0');
+										WordLen = len;
+										WordArrayA = (int*)malloc(len * sizeof(int));
+										memcpy(WordArrayA, WordArray, len *sizeof(int));
 									}
 									else if(strlen(Token) == strlen(".byte")&& strcmp(Token, ".byte") == 0)
 									{
@@ -114,13 +138,14 @@ bool Parse_ASSM(char * File_Name, char *File_Output)
 									{
 										char * Temp = Token;
 										Token = parseFirstToken(Ptr ,Len,&TokLen,&Ptr);
+										AsciLen = TokLen;
+										AsciArr = Token;
 										Tok_Char = *Token;
-										free(Token);
 										free(Temp);
 										Prev += TokLen;
 									}
 								}while(Tok_Char != '\n' && Tok_Char !='\0');
-								InsertSymbolTable(Address,OldToken);
+								InsertSymbolTable(Address,DATA_SECTION,OldToken,AsciArr,AsciLen,WordArrayA,WordLen);
 								Address += Prev;
 							}
 						}
@@ -134,6 +159,12 @@ bool Parse_ASSM(char * File_Name, char *File_Output)
 			{
 				//Parse Instructions and Convert to Machine Since All Label Addresses are Known
 				Token = parseFirstToken(LineReader,Len,&TokLen,&Ptr);
+				if(StrCmp(Token , ".data"))
+				{
+					//Add Data Variables to Machine Code
+					Flag_Data = 1;
+					break;
+				}
 				if(*Token != '#' && *Token != '\n' && !IS_Directive_Available(Token))
 				{
 					bool Label_flag = isTokenLabel(Token,TokLen);
@@ -148,7 +179,7 @@ bool Parse_ASSM(char * File_Name, char *File_Output)
 							char * Operands[3] ={NULL} ;
 							//Check Which Instruction is Encountered
 							char * Instr = Token;
-							IndexInstructionTable(Token,&Index);
+							IndexInstructionTable((const INSTR *)Token,(int8_t *)&Index);
 							//Parse According To Number of operands
 							int8_t No_Parses = INSTR_ARRAY[Index][1];
 							while(No_Parses >0 )
@@ -181,9 +212,9 @@ bool Parse_ASSM(char * File_Name, char *File_Output)
 									uint8_t ID1 = 0;
 									uint8_t ID2 = 0;
 									uint8_t ID3 = 0;
-									bool Flag_1 = IndexRegTable(Operands[0] , &ID1);
-									bool Flag_2 = IndexRegTable(Operands[1] , &ID2);
-									bool Flag_3 = IndexRegTable(Operands[2] , &ID3);
+									bool Flag_1 = IndexRegTable((const REGS )Operands[0] ,(int8_t *)&ID1);
+									bool Flag_2 = IndexRegTable((const REGS )Operands[1] ,(int8_t *) &ID2);
+									bool Flag_3 = IndexRegTable((const REGS )Operands[2] ,(int8_t *)&ID3);
 									if(Flag_1 && Flag_2 && Flag_3)
 									{
 										Binary_Value |= INSTR_ARRAY[Index][0] <<26;
@@ -203,8 +234,8 @@ bool Parse_ASSM(char * File_Name, char *File_Output)
 									//R TYPE = 6bits OP CODE , 5BITS RS,5BITS RT,5BITS RD,5BITS SHAMT,6BITS FUNCT
 									uint8_t ID1 = 0;
 									uint8_t ID2 = 0;
-									bool Flag_1 = IndexRegTable(Operands[0],&ID1);
-									bool Flag_2 = IndexRegTable(Operands[1],&ID2);
+									bool Flag_1 = IndexRegTable((const REGS )Operands[0],(int8_t *)&ID1);
+									bool Flag_2 = IndexRegTable((const REGS )Operands[1],(int8_t *)&ID2);
 									int16_t SHAMT = ConvertStringToInt(Operands[2]);
 
 									if (Flag_1 && Flag_2 ) {
@@ -227,8 +258,8 @@ bool Parse_ASSM(char * File_Name, char *File_Output)
 									//I TYPE = 6bits OP CODE , 5BITS RS,5BITS RT,5BITS RD,16bits Imm
 									uint8_t ID1 = 0;
 									uint8_t ID2 = 0;
-									bool Flag_1 = IndexRegTable(Operands[0],	&ID1);
-									bool Flag_2 = IndexRegTable(Operands[1],&ID2);
+									bool Flag_1 = IndexRegTable((const REGS )Operands[0],(int8_t *)&ID1);
+									bool Flag_2 = IndexRegTable((const REGS )Operands[1],(int8_t *)&ID2);
 									int16_t SHAMT = ConvertStringToInt(Operands[2]);
 
 									if (Flag_1 && Flag_2) {
@@ -256,8 +287,8 @@ bool Parse_ASSM(char * File_Name, char *File_Output)
 									{
 										uint8_t ID1 = 0;
 										uint8_t ID2 = 0;
-										bool Flag_1 = IndexRegTable(Operands[0],&ID1);
-										bool Flag_2 = IndexRegTable(Temp,&ID2);
+										bool Flag_1 = IndexRegTable((const REGS )Operands[0],(int8_t *)&ID1);
+										bool Flag_2 = IndexRegTable((const REGS )Temp,(int8_t *)&ID2);
 
 										if (Flag_1 && Flag_2) {
 											Binary_Value |= INSTR_ARRAY[Index][0]<< 26;
@@ -280,7 +311,7 @@ bool Parse_ASSM(char * File_Name, char *File_Output)
 									//J TYPE 6bits OPCODE , 26bit Immediate
 									int32_t lAddress = 0x00000000;
 									//1 Operand Label which is Equivalent to an address in the Symbol Table
-									bool IN_SYMBOLTABLE = FindSymbolTabel(Operands[0],&lAddress);
+									bool IN_SYMBOLTABLE = FindSymbolTabel((char *)Operands[0],(uint32_t *)&lAddress);
 									if(IN_SYMBOLTABLE)
 									{
 										lAddress -= TEXT_SECTION_START_ADDRESS;
@@ -298,8 +329,7 @@ bool Parse_ASSM(char * File_Name, char *File_Output)
 								{
 									//R TYPE = 6bits OP CODE , 5BITS RS,5BITS RT,5BITS RD,5BITS SHAMT,6BITS FUNCT
 									uint8_t ID1 = 0;
-									uint8_t ID2 = 0;
-									bool Flag_1 = IndexRegTable(Operands[0],&ID1);
+									bool Flag_1 = IndexRegTable((const REGS )Operands[0],(int8_t *)&ID1);
 									if (Flag_1 ) {
 										Binary_Value |= INSTR_ARRAY[Index][0]	<< 26;
 										Binary_Value |= RegVal[ID1] << 21;
@@ -316,9 +346,9 @@ bool Parse_ASSM(char * File_Name, char *File_Output)
 									uint8_t ID1 = 0;
 									uint8_t ID2 = 0;
 									int32_t JumpAddress = 0x00000000;
-									bool Flag_1 = IndexRegTable(Operands[0],&ID1);
-									bool Flag_2 = IndexRegTable(Operands[1],&ID2);
-									bool IN_SYMBOLTABLE = FindSymbolTabel(Operands[2],&JumpAddress);
+									bool Flag_1 = IndexRegTable((const REGS )Operands[0],(int8_t *)&ID1);
+									bool Flag_2 = IndexRegTable((const REGS )Operands[1],(int8_t *)&ID2);
+									bool IN_SYMBOLTABLE = FindSymbolTabel((char *)Operands[2],(uint32_t *)&JumpAddress);
 									if(Flag_1 && Flag_2 && IN_SYMBOLTABLE)
 									{
 										JumpAddress -= TEXT_SECTION_START_ADDRESS;
@@ -343,10 +373,8 @@ bool Parse_ASSM(char * File_Name, char *File_Output)
 							Address += 4;
 						}
 						else {
-							printf("%s Inccorrect Instruction Not Supported ",
+							printf("0xXXXXXXXX : %s Instruction Not Supported ",
 									Token);
-							Ret = FALSE;
-							break;
 						}
 					}
 				}else{
@@ -356,18 +384,28 @@ bool Parse_ASSM(char * File_Name, char *File_Output)
 	}else{
 		Ret = FALSE;
 	}
+	//Add Symbol Table Data Section to Machine Code
+	if(Flag_Data == 1)
+	{
+		AddSymbolTabel(FILE_Output);
+	}
 	fclose(FILE_Buffer);
 	fclose(FILE_Output);
 	return Ret;
 }
 
-static void  InsertSymbolTable(int32_t Address ,char *Token)
+static void  InsertSymbolTable(int32_t Address,uint8_t Section ,char *Token ,char * Val,int AsciLen,int32_t*Word,int WordLEn)
 {
 	if(Token != NULL)
 	{
 		SymbolTable *Node = (SymbolTable *)malloc(sizeof(SymbolTable));
 		Node->Address = Address;
 		Node->Symbol = Token;
+		Node->AsciArr.Ptr = Val;
+		Node->AsciArr.Len = AsciLen;
+		Node->WordArr.Ptr = Word;
+		Node->WordArr.Len = WordLEn;
+		Node->Section = Section;
 		Node->Next = NULL;
 		Node->prev = NULL;
 
@@ -385,15 +423,76 @@ static void  InsertSymbolTable(int32_t Address ,char *Token)
 	}
 }
 
+static void AddSymbolTabel(FILE *Out)
+{
+	SymbolTable *Head = List.Head;
+	char Str[256] = {0};
+	fprintf(Out, "\n\n#=========Data Section in Memory==========\n\n");
+	while(Head != NULL)
+	{
+		if(Head->Section == DATA_SECTION)
+		{
+			//Symbol Could be a word or an asci val
+			if(Head->WordArr.Ptr != NULL)
+			{
+				int32_t Len = 0;
+				for(;Len <= Head->WordArr.Len -1 ;Len++)
+				{
+					sprintf(Str, "0x%08X:\t0x%08X\t\t #%s\n",Head->Address + 4*Len,Head->WordArr.Ptr[Len],Head->Symbol);
+					fprintf(Out, Str);
+				}
+			}else if(Head->AsciArr.Ptr != NULL)
+			{
+				int32_t LLEN = 0;
+				int32_t Len = 0;
+				int32_t Bin = 0;
+				int32_t Shift = 0;
+				for(;Len <= (Head->AsciArr.Len)/4 - 1;Len++)
+				{
+					Bin = (Head->AsciArr.Ptr[Len<<2] <<0)| (Head->AsciArr.Ptr[((Len<<2) +1)] <<8)
+								 |(Head->AsciArr.Ptr[((Len<<2) +2)] <<16)|(Head->AsciArr.Ptr[((Len<<2) +3)]<<24);
+					sprintf(Str, "0x%08X:\t0x%08X\t\t #%s\n", Head->Address + Len ,Bin, Head->Symbol);
+					fprintf(Out, Str);
+				}
+				Bin = 0;
+				LLEN = Len;
+				for(; Len <= ((Head->AsciArr.Len)%4) + LLEN - 1 ; Len++)
+				{
+					Bin |= Head->AsciArr.Ptr[Len] << 8*Shift;
+					Shift++;
+				}
+				sprintf(Str, "0x%08X:\t0x%08X\t\t #%s\n", Head->Address + LLEN, Bin,Head->Symbol);
+				fprintf(Out, Str);
+			}
+		}
+		Head = Head->Next;
+	}
+}
+
+static int    StringToint(char *Str)
+{
+	int32_t Ret  = 0;
+	uint8_t  Flag = 0;
+	uint32_t i = 0;
+	if(*Str == '-')
+		Flag = 1;
+	while(*(Str + i) !='\0')
+	{
+		Ret = Ret*10 +(*(Str+i)-'0');
+		i++;
+	}
+	return Flag == 1? Ret * -1 :Ret;
+}
+
 static char * BinaryToHexString(int32_t Instr,int32_t Addr , int len,char *In,char *OP1 ,char *Op2 ,char *Op3)
 {
 	char * Str = (char * )calloc(256 ,sizeof(char));
 	if(len == 1)
-		sprintf(Str, "[0x%x]\t0x%x\t\t #%s %s\n",Addr,Instr,In,OP1);
+		sprintf(Str, "0x%08X:\t0x%08X\t\t #%s %s\n",Addr,Instr,In,OP1);
 	else if(len == 2)
-		sprintf(Str, "[0x%x]\t0x%x\t\t #%s %s,%s\n",Addr,Instr,In,OP1,Op2);
+		sprintf(Str, "0x%08X:\t0x%08X\t\t #%s %s,%s\n",Addr,Instr,In,OP1,Op2);
 	else if(len == 3)
-		sprintf(Str, "[0x%x]\t0x%x\t\t #%s %s,%s,%s\n",Addr,Instr,In,OP1,Op2,Op3);
+		sprintf(Str, "0x%08X:\t0x%08X\t\t #%s %s,%s,%s\n",Addr,Instr,In,OP1,Op2,Op3);
 	return Str;
 }
 
@@ -429,7 +528,7 @@ static bool LoadStoreInstr(char  *Token , char **Register ,uint16_t *Immediate)
 		}
 		i++;
 	}
-	ret = IndexRegTable(Temp , &Size);
+	ret = IndexRegTable((const REGS )Temp ,(int8_t *) &Size);
 	if(ret == TRUE)
 		*Register = Temp;
 	else
@@ -439,7 +538,12 @@ static bool LoadStoreInstr(char  *Token , char **Register ,uint16_t *Immediate)
 
 static bool FindSymbolTabel(char *Token , uint32_t *Address)
 {
+	int8_t Len_Token = strlen(Token);
 	SymbolTable * Head = List.Head;
+
+	if (*(Token + Len_Token - 1) == ':')
+		*(Token + Len_Token - 1) = '\0';
+
 	while(Head != NULL)
 	{
 		if(strlen(Token) == strlen(Head->Symbol)&& strcmp(Token, Head->Symbol) == 0)
@@ -455,11 +559,11 @@ static bool FindSymbolTabel(char *Token , uint32_t *Address)
 void PrintSymbolTable()
 {
 	SymbolTable * Head = List.Head;
-	printf(" Adresss  \t\t Label \n\n");
+	printf(" Adresss  \t\t Label \n");
 	fflush(stdout);
 	while(Head != NULL)
 	{
-		printf(" %x \t\t %s \n\n",Head->Address ,Head->Symbol);
+		printf(" %08x \t\t %s \n",Head->Address ,Head->Symbol);
 		fflush(stdout);
 		Head = Head->Next;
 	}
@@ -505,9 +609,29 @@ static char * parseFirstToken(char *Line ,uint16_t Len ,uint16_t *Token_Len,char
 			//Skip Token
 			while(*(Line + Counter) != ' ' && *(Line + Counter) != '\t'&&*(Line + Counter) != '\n'&&*(Line + Counter) != ',' &&*(Line+Counter ) !='\0')
 			{
-				*(Token + TokCounter) = *(Line + Counter);
-				Counter++;
-				TokCounter++;
+				if(*(Line +Counter) =='\"')
+				{
+					Counter ++;
+				}else{
+					if(*(Line + Counter ) =='\\')
+					{
+						if(*(Line + Counter + 1 ) == 'n' )
+						{
+							Counter += 2;
+							*(Token + TokCounter) = '\n';
+							TokCounter++;
+						}else if(*(Line + Counter + 1) =='t')
+						{
+							Counter += 2;
+							*(Token + TokCounter) = '\n';
+							TokCounter++;
+						}
+					}else{
+						*(Token + TokCounter) = *(Line + Counter);
+						Counter++;
+						TokCounter++;
+					}
+				}
 			}
 			*(Token + TokCounter) = '\0';
 			*Start = Line + Counter;
@@ -530,7 +654,10 @@ static bool isTokenLabel(char *Token ,uint16_t Token_len)
 	if(Token != NULL)
 	{
 		if(*(Token + Token_len - 1 )== ':')
+		{
+			*(Token + Token_len - 1 ) = '\0';
 			isToken = TRUE;
+		}
 		else
 			isToken = FALSE;
 	}else{

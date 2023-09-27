@@ -13,7 +13,6 @@
 #include "STD_TYPES.h"
 
 //Register Definition File
-/*
 #define $0		0
 #define $at     1
 #define $v0		2
@@ -110,7 +109,6 @@
 #define nor     57  //rd, rs, rt nor [rd] = ~([rs] | [rt])
 #define slt     58  //rd, rs, rt set less than [rs] < [rt] ? [rd] = 1 : [rd] = 0
 #define sltu    59  //rd, rs, rt
-*/
 
 #define R_TYPE 	0
 #define I_TYPE  1

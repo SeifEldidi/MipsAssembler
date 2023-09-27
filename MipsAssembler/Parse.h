@@ -17,10 +17,25 @@
 
 typedef char SYMBOL;
 
+typedef struct
+{
+	int * Ptr;
+	int Len;
+}WordVal;
+
+typedef struct
+{
+	char * Ptr;
+	int Len;
+}AsciVal;
+
 typedef struct SymbolTable
 {
 	SYMBOL * Symbol;
 	int32_t  Address;
+	uint8_t  Section;
+	WordVal  WordArr ;
+	AsciVal  AsciArr;
 	struct SymbolTable *Next;
 	struct SymbolTable *prev;
 }SymbolTable;
