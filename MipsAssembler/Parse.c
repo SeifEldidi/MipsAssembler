@@ -623,7 +623,7 @@ static char * parseFirstToken(char *Line ,uint16_t Len ,uint16_t *Token_Len,char
 						}else if(*(Line + Counter + 1) =='t')
 						{
 							Counter += 2;
-							*(Token + TokCounter) = '\n';
+							*(Token + TokCounter) = '\t';
 							TokCounter++;
 						}
 					}else{
